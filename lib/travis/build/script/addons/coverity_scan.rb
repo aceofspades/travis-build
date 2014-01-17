@@ -44,7 +44,7 @@ module Travis
                 env << "OWNER_EMAIL=\"#{@config[:email]}\""
                 env << "BUILD_COMMAND=\"#{@config[:build_command]}\""
                 env << "COVERITY_SCAN_BRANCH_PATTERN=#{@config[:branch_pattern]}"
-                script.cmd "curl -s #{@config[:build_script_url]} | #{env.join(' ')} sh", echo: true
+                script.cmd "curl -s #{@config[:build_script_url]} | #{env.join(' ')} bash", echo: true
               end
             end
             @script.else echo:true do |script|
