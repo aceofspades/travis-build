@@ -67,6 +67,11 @@ module Travis
         "cache"
       end
 
+      # Remove the current script, to allow override from an add-on
+      def delete_script
+        config[:script] = nil
+      end
+
       private
 
         def check_config

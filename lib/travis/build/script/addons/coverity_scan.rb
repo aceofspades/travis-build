@@ -25,45 +25,65 @@ module Travis
           # The Coverity Scan build therefore overrides the default script, but only on the
           #   coverity_scan branch.
           def script
+            extract_original_script
+
+
+            #@script.raw "export TRAVIS_TEST_RESULT=1", echo: true
+
+
+
             @script.raw "echo -en 'coverity_scan script override:start\\r'"
-            @script.if "\"$TRAVIS_BRANCH\" == \"coverity_scan\"" do
-              @script.fold('build_coverity') do |script|
-                script.cmd build_command, assert: false, echo: true
-              end
-              @script.fold('submit_coverity_results') do |script|
-                script.cmd submit_results, assert: false, echo: true
-              end
+            @script.if "\"$TRAVIS_BRANCH\" == \"coverity_scan\"", echo: true do
+              build_command
+              submit_results
             end
-            _script = @script
-            @script.else do
-              @script.fold('original_script') { |_| _script.script }
+            @script.else echo: true do
+              @script.fold('original_script') { |_| @original_script.script }
             end
             @script.raw "echo -en 'coverity_scan script override:end\\r'"
-            @script.define_singleton_method(:script) {}
           end
 
           private
 
+          def extract_original_script
+            @original_script = @script.dup
+            @script.delete_script
+          end
+
           def build_command
-            <<-BASH.squeeze(' ').lines.map { |s| s.strip }.join("\n") << "\n"
-              #{export_env}
-              export PATH=#{cov_analysis_dir}/bin:$PATH
-              COVERITY_UNSUPPORTED=1 cov-build --dir cov-int #{@config[:build_command]}
-            BASH
+            @script.if "\"$TRAVIS_TEST_RESULT\" == 0", echo: true do |script|
+              script.fold('build_coverity') do |script|
+                script.cmd export_env, assert: false, echo: true
+                script.cmd "export PATH=#{cov_analysis_dir}/bin:$PATH", assert: false, echo: true
+                script.cmd "COVERITY_UNSUPPORTED=1 cov-build --dir cov-int #{@config[:build_command]}",
+                    assert: false, echo: true
+              end
+            end
+            @script.else echo:true do |script|
+              script.raw "echo -e \"\033[33;1mSkipping build_coverity due to previous error\033[0m\""
+            end
           end
 
           def submit_results
-            <<-BASH.squeeze(' ').lines.map { |s| s.strip }.join("\n") << "\n"
-              tar czf cov-int.tgz cov-int
-              curl \
-              --form project="#{@config[:project][:name]}" \
-              --form token=$COVERITY_SCAN_TOKEN \
-              --form email="#{@config[:email]}" \
-              --form file=@cov-int.tgz \
-              --form version="#{@config[:project][:version]}" \
-              --form description="#{@config[:project][:description]}" \
-              #{UPLOAD_URL}
-            BASH
+            @script.if "\"$TRAVIS_TEST_RESULT\" == 0", echo: true do
+              @script.fold('submit_coverity_results') do |script|
+                cmd = <<-BASH.squeeze(' ').lines.map { |s| s.strip }.join("\n") << "\n"
+                  tar czf cov-int.tgz cov-int
+                  curl \
+                  --form project="#{@config[:project][:name]}" \
+                  --form token=$COVERITY_SCAN_TOKEN \
+                  --form email="#{@config[:email]}" \
+                  --form file=@cov-int.tgz \
+                  --form version="#{@config[:project][:version]}" \
+                  --form description="#{@config[:project][:description]}" \
+                  #{UPLOAD_URL}
+                BASH
+                script.cmd cmd, assert: false, echo: true
+              end
+            end
+            @script.else echo:true do |script|
+              script.raw "echo -e \"\033[33;1mSkipping submit_coverity_results due to previous error\033[0m\""
+            end
           end
 
           private
@@ -87,14 +107,19 @@ module Travis
                   wget -O #{TMP_TAR} #{download_url} --post-data "token=$COVERITY_SCAN_TOKEN&project=#{@config[:project][:name]}"
                   if [ $? -ne 0 ]; then
                     echo -e \"\033[33;1mError downloading Coverity Build Utility\033[0m\"
-                    exit
+                    exit 1
                   fi
                 fi
                 pushd #{cov_analysis_base_dir}/versions
                 echo -e \"\033[33;1mExtracting Coverity Build Utility\033[0m\"
                 tar xf #{TMP_TAR}
-                DIR=`tar tf #{TMP_TAR} | head -1`
-                ln -s #{cov_analysis_base_dir}/versions/$DIR #{cov_analysis_dir}
+                if [ $? -ne 0 ]; then
+                  echo -e \"\033[33;1mError untarring Coverity Build Utility\033[0m\"
+                  exit 1
+                else
+                  DIR=`tar tf #{TMP_TAR} | head -1`
+                  ln -s #{cov_analysis_base_dir}/versions/$DIR #{cov_analysis_dir}
+                fi
                 popd
               fi
             BASH
