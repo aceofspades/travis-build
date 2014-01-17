@@ -12,12 +12,6 @@ module Travis
             @config = config.respond_to?(:to_hash) ? config.to_hash : {}
           end
 
-          def install
-            @script.fold('install_coverity') do |script|
-              script.cmd "curl #{@config[:install_script_url]} | sh", echo: true
-            end
-          end
-
           # This method consumes the script method of the caller, calling it or the Coverity Scan
           #   script depending on the TRAVIS_BRANCH env variable.
           # The Coverity Scan build therefore overrides the default script, but only on the
