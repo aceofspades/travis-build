@@ -38,12 +38,13 @@ module Travis
           def build_command
             @script.if "\"$TRAVIS_TEST_RESULT\" == 0", echo: true do |script|
               script.fold('build_coverity') do |script|
-                script.cmd "export PROJECT_SLUG=\"#{@config[:project][:slug]}\""
-                script.cmd "export PROJECT_NAME=\"#{@config[:project][:name]}\""
-                script.cmd "export OWNER_EMAIL=\"#{@config[:email]}\""
-                script.cmd "export MAKE_COMMAND=\"#{@config[:build_command}\""
-                script.cmd "export COVERITY_SCAN_BRANCH_PATTERN=#{@config[:branch_pattern]}"
-                script.cmd "curl #{@config[:build_script_url]} | sh", echo: true
+                env = []
+                env << "PROJECT_SLUG=\"#{@config[:project][:slug]}\""
+                env << "PROJECT_NAME=\"#{@config[:project][:name]}\""
+                env << "OWNER_EMAIL=\"#{@config[:email]}\""
+                env << "BUILD_COMMAND=\"#{@config[:build_command]}\""
+                env << "COVERITY_SCAN_BRANCH_PATTERN=#{@config[:branch_pattern]}"
+                script.cmd "curl -s #{@config[:build_script_url]} | #{env.join(' ')} sh", echo: true
               end
             end
             @script.else echo:true do |script|
