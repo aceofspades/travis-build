@@ -3,6 +3,7 @@ module Travis
     class Script
       module Addons
         class CoverityScan
+          SCAN_URL      = 'http://scan.coverity.local'
           UPLOAD_URL    = 'http://scan5.coverity.com/cgi-bin/upload.py'
           TMP_TAR       = '/tmp/cov-analysis.tar.gz'
           INSTALL_DIR   = '/usr/local'
@@ -19,7 +20,9 @@ module Travis
           def script
             extract_original_script
             @script.raw "echo -en 'coverity_scan script override:start\\r'"
-            @script.if "$TRAVIS_BRANCH =~ #{@config[:branch_pattern]}", echo: true do
+            authorize_branch
+            @script.if "$COVERITY_SCAN_BRANCH == 0", echo: true do
+              authorize_quota
               build_command
             end
             @script.else echo: true do
@@ -29,6 +32,34 @@ module Travis
           end
 
           private
+
+          def authorize_quota
+            scr = <<SH
+export SCAN_URL=#{SCAN_URL}
+AUTH_RES=`curl -s --form project="$PROJECT_NAME" --form token="$COVERITY_SCAN_TOKEN" $SCAN_URL/api/upload_permitted`
+AUTH=`echo $AUTH_RES | ruby -e "require 'rubygems'; require 'json'; puts JSON[STDIN.read]['upload_permitted']"`
+if [[ "$AUTH" == "true" ]]; then
+  echo -e "\033[33;1mCoverity Scan analysis authorized per quota.\033[0m"
+else
+  WHEN=`echo $AUTH_RES | ruby -e "require 'rubygems'; require 'json'; puts JSON[STDIN.read]['next_upload_permitted_at']"`
+  echo -e "\033[33;1mCoverity Scan analysis NOT authorized until $WHEN.\033[0m"
+  exit 1
+fi
+SH
+            @script.raw(scr, echo: true)
+          end
+
+          def authorize_branch
+            scr = <<SH
+export COVERITY_SCAN_BRANCH=`ruby -e "puts '$TRAVIS_BRANCH' =~ /\\A#{@config[:branch_pattern]}\\z/ ? 'true' : 'false'"`
+if [[ "$COVERITY_SCAN_BRANCH" == "true" ]]; then
+  echo -e "\033[33;1mCoverity Scan analysis selected for branch \\"$TRAVIS_BRANCH\\".\033[0m"
+else
+  echo -e "\033[33;1mCoverity Scan analysis NOT slected for branch \\"$TRAVIS_BRANCH\\"\033[0m"
+fi
+SH
+            @script.raw(scr, echo: true)
+          end
 
           def extract_original_script
             @original_script = @script.dup
